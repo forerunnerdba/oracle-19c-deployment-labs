@@ -1,0 +1,1592 @@
+**********************************************************************************************************************************************************************
+																			Pre-requisites
+**********************************************************************************************************************************************************************
+
+Link to download 19.32.0 RU. This is a bundle patch which has Database RU also
+https://support.oracle.com/support/?patchId=39467003
+
+ Patch No : 39467003
+ Patch Name : GI RELEASE UPDATE 19.32.0.0.0(Patch:Linux x86-64) 
+ Patch File Name: p39467003_190000_Linux-x86-64.zip (2.7 GB)
+         
+Link to download lates OPatch 
+http://updates.oracle.com/ARULink/PatchDetails/process_form?patch_num=6880880
+
+**********************************************************************************************************************************************************************
+													Steps for Silent Installation of 19c on RHEL with ASM
+**********************************************************************************************************************************************************************
+
+1. Create OS groups using the command below. Enter these commands as the 'root' user:
+
+(a). Create OS groups
+/usr/sbin/groupadd -g 501 oinstall
+/usr/sbin/groupadd -g 502 dba
+/usr/sbin/groupadd -g 503 asmdba
+/usr/sbin/groupadd -g 504 asmoper
+/usr/sbin/groupadd -g 506 asmadmin
+
+(b). Create the users that will own the Oracle software using the commands as the 'root' user:
+
+mkdir  /u01
+/usr/sbin/useradd -u 501 -g oinstall -G dba oracle
+chown -R oracle:oinstall /u01
+usermod  -G asmdba,asmoper,asmadmin,dba,oinstall oracle
+usermod -aG wheel oracle # This one we need when running cluster verification script with sudo
+id oracle
+
+#Change the password of oracle user
+passwd oracle
+
+(c) Create the Oracle Inventory Directory as 'oracle' user
+
+mkdir -p /u01/app/oraInventory
+chown -R oracle:oinstall /u01/app/oraInventory
+chmod -R 775 /u01/app/oraInventory
+
+(d) Creating the Oracle Grid Infrastructure Base and  Home Directory as 'oracle' user
+
+mkdir -p /u01/app/19.3.0/db
+mkdir -p /u01/app/19.3.0/grid
+chown -R oracle:oinstall /u01/app/19.3.0/db
+chown -R oracle:oinstall /u01/app/
+chmod -R 775 /u01/app/19.3.0/grid
+
+(e) Creating Oracle Software directory
+
+mkdir -p /u01/app/oracle/software
+chown -R oracle:oinstall /u01/app/oracle/software
+
+
+2. Expanding the existing partitions
+
+[root@caoradb01 ~]# lsblk
+NAME              MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+nvme0n1           259:0    0  128G  0 disk
+├─nvme0n1p1       259:1    0  500M  0 part /boot/efi
+├─nvme0n1p2       259:2    0  500M  0 part /boot
+├─nvme0n1p3       259:3    0    2M  0 part
+└─nvme0n1p4       259:4    0   63G  0 part
+  ├─rootvg-tmplv  253:0    0    2G  0 lvm  /tmp
+  ├─rootvg-usrlv  253:1    0   10G  0 lvm  /usr
+  ├─rootvg-optlv  253:2    0    2G  0 lvm  /opt
+  ├─rootvg-homelv 253:3    0    1G  0 lvm  /home
+  ├─rootvg-varlv  253:4    0    8G  0 lvm  /var
+  └─rootvg-rootlv 253:5    0    2G  0 lvm  /
+nvme0n2           259:5    0   32G  0 disk
+nvme0n3           259:6    0   32G  0 disk
+nvme0n4           259:7    0   32G  0 disk
+nvme0n5           259:8    0   32G  0 disk
+
+#To resize the disk partition: nvme0n1p4
+[root@caoradb01 ~]# growpart /dev/nvme0n1 4
+CHANGED: partition=4 start=2054144 old: size=132161536 end=134215680 new: size=266381278 end=268435422
+
+[root@caoradb01 ~]# lsblk
+NAME              MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+nvme0n1           259:0    0  128G  0 disk
+├─nvme0n1p1       259:1    0  500M  0 part /boot/efi
+├─nvme0n1p2       259:2    0  500M  0 part /boot
+├─nvme0n1p3       259:3    0    2M  0 part
+└─nvme0n1p4       259:4    0  127G  0 part
+  ├─rootvg-tmplv  253:0    0    2G  0 lvm  /tmp
+  ├─rootvg-usrlv  253:1    0   10G  0 lvm  /usr
+  ├─rootvg-optlv  253:2    0    2G  0 lvm  /opt
+  ├─rootvg-homelv 253:3    0    1G  0 lvm  /home
+  ├─rootvg-varlv  253:4    0    8G  0 lvm  /var
+  └─rootvg-rootlv 253:5    0    2G  0 lvm  /
+nvme0n2           259:5    0   32G  0 disk
+nvme0n3           259:6    0   32G  0 disk
+nvme0n4           259:7    0   32G  0 disk
+nvme0n5           259:8    0   32G  0 disk
+
+
+[root@caoradb01 opatchauto]# pvs
+  PV             VG     Fmt  Attr PSize   PFree
+  /dev/nvme0n1p4 rootvg lvm2 a--  <63.02g    0
+
+
+#On RHEL 8.10, simply run growpart followed by lvextend to expand the partition, with a reboot only if required.
+#On RHEL 7.9, the process requires additional steps: run growpart, then pvresize, lvextend, and finally xfs_growfs to complete the partition expansion.
+#To resize the physical volume
+[root@caoradb01 opatchauto]# pvresize /dev/nvme0n1p4
+  Physical volume "/dev/nvme0n1p4" changed
+  1 physical volume(s) resized or updated / 0 physical volume(s) not resized
+
+[root@caoradb01 opatchauto]# pvs
+  PV             VG     Fmt  Attr PSize    PFree
+  /dev/nvme0n1p4 rootvg lvm2 a--  <127.02g 64.00g
+
+#Extending the lvm to use 100% Free space in that particular partition
+[root@caoradb01 opatchauto]# lvextend -l +100%FREE /dev/mapper/rootvg-rootlv
+  Size of logical volume rootvg/rootlv changed from <24.02 GiB (6148 extents) to <88.02 GiB (22532 extents).
+  Logical volume rootvg/rootlv successfully resized.
+
+[root@caoradb01 opatchauto]# df -hT
+Filesystem                Type      Size  Used Avail Use% Mounted on
+devtmpfs                  devtmpfs  7.8G     0  7.8G   0% /dev
+tmpfs                     tmpfs     7.8G     0  7.8G   0% /dev/shm
+tmpfs                     tmpfs     7.8G  8.7M  7.8G   1% /run
+tmpfs                     tmpfs     7.8G     0  7.8G   0% /sys/fs/cgroup
+/dev/mapper/rootvg-rootlv xfs        25G   21G  3.2G  87% /
+/dev/mapper/rootvg-usrlv  xfs        10G  1.6G  8.5G  16% /usr
+/dev/nvme0n1p2            xfs       494M  120M  374M  25% /boot
+/dev/mapper/rootvg-homelv xfs      1014M   33M  982M   4% /home
+/dev/mapper/rootvg-optlv  xfs       2.0G  140M  1.9G   7% /opt
+/dev/nvme0n1p1            vfat      500M  9.9M  490M   2% /boot/efi
+/dev/mapper/rootvg-tmplv  xfs       2.0G   33M  2.0G   2% /tmp
+/dev/mapper/rootvg-varlv  xfs       8.0G  1.1G  7.0G  13% /var
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/1000
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/501
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/0
+
+#To grow the XFS filesystem
+[root@caoradb01 opatchauto]# xfs_growfs /
+meta-data=/dev/mapper/rootvg-rootlv isize=512    agcount=49, agsize=131072 blks
+         =                       sectsz=4096  attr=2, projid32bit=1
+         =                       crc=1        finobt=0 spinodes=0
+data     =                       bsize=4096   blocks=6295552, imaxpct=25
+         =                       sunit=0      swidth=0 blks
+naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+log      =internal               bsize=4096   blocks=2560, version=2
+         =                       sectsz=4096  sunit=1 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+data blocks changed from 6295552 to 23072768
+
+[root@caoradb01 opatchauto]# lsblk
+NAME              MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+nvme0n1           259:0    0  128G  0 disk
+├─nvme0n1p1       259:1    0  500M  0 part /boot/efi
+├─nvme0n1p2       259:2    0  500M  0 part /boot
+├─nvme0n1p3       259:3    0    2M  0 part
+└─nvme0n1p4       259:4    0  127G  0 part
+  ├─rootvg-tmplv  253:0    0    2G  0 lvm  /tmp
+  ├─rootvg-usrlv  253:1    0   10G  0 lvm  /usr
+  ├─rootvg-optlv  253:2    0    2G  0 lvm  /opt
+  ├─rootvg-homelv 253:3    0    1G  0 lvm  /home
+  ├─rootvg-varlv  253:4    0    8G  0 lvm  /var
+  ├─rootvg-rootlv 253:5    0   88G  0 lvm  /
+  └─rootvg-swaplv 253:6    0   16G  0 lvm  [SWAP]
+nvme0n2           259:5    0   32G  0 disk
+└─nvme0n2p1       259:9    0   32G  0 part
+nvme0n3           259:6    0   32G  0 disk
+nvme0n4           259:7    0   32G  0 disk
+nvme0n5           259:8    0   32G  0 disk
+
+[root@caoradb01 opatchauto]# df -hT
+Filesystem                Type      Size  Used Avail Use% Mounted on
+devtmpfs                  devtmpfs  7.8G     0  7.8G   0% /dev
+tmpfs                     tmpfs     7.8G     0  7.8G   0% /dev/shm
+tmpfs                     tmpfs     7.8G  8.7M  7.8G   1% /run
+tmpfs                     tmpfs     7.8G     0  7.8G   0% /sys/fs/cgroup
+/dev/mapper/rootvg-rootlv xfs        89G   21G   68G  24% /
+/dev/mapper/rootvg-usrlv  xfs        10G  1.6G  8.5G  16% /usr
+/dev/nvme0n1p2            xfs       494M  120M  374M  25% /boot
+/dev/mapper/rootvg-homelv xfs      1014M   33M  982M   4% /home
+/dev/mapper/rootvg-optlv  xfs       2.0G  140M  1.9G   7% /opt
+/dev/nvme0n1p1            vfat      500M  9.9M  490M   2% /boot/efi
+/dev/mapper/rootvg-tmplv  xfs       2.0G   33M  2.0G   2% /tmp
+/dev/mapper/rootvg-varlv  xfs       8.0G  1.1G  7.0G  13% /var
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/1000
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/501
+tmpfs                     tmpfs     1.6G     0  1.6G   0% /run/user/0
+
+
+3. Creating Swap space in the existing volume group rootvg
+ 
+[root@caoradb01 ~]# lvcreate -L 16G -n swaplv rootvg
+  Logical volume "swaplv" created.
+
+[root@caoradb01 ~]# lvscan
+  ACTIVE            '/dev/rootvg/tmplv' [2.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/usrlv' [10.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/optlv' [2.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/homelv' [1.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/varlv' [8.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/rootlv' [2.00 GiB] inherit
+  ACTIVE            '/dev/rootvg/swaplv' [16.00 GiB] inherit
+
+[root@caoradb01 ~]# lsblk
+NAME              MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+nvme0n1           259:0    0  128G  0 disk
+├─nvme0n1p1       259:1    0  500M  0 part /boot/efi
+├─nvme0n1p2       259:2    0  500M  0 part /boot
+├─nvme0n1p3       259:3    0    2M  0 part
+└─nvme0n1p4       259:4    0  127G  0 part
+  ├─rootvg-tmplv  253:0    0    2G  0 lvm  /tmp
+  ├─rootvg-usrlv  253:1    0   10G  0 lvm  /usr
+  ├─rootvg-optlv  253:2    0    2G  0 lvm  /opt
+  ├─rootvg-homelv 253:3    0    1G  0 lvm  /home
+  ├─rootvg-varlv  253:4    0    8G  0 lvm  /var
+  ├─rootvg-rootlv 253:5    0    2G  0 lvm  /
+  └─rootvg-swaplv 253:6    0   16G  0 lvm
+nvme0n2           259:5    0   32G  0 disk
+nvme0n3           259:6    0   32G  0 disk
+nvme0n4           259:7    0   32G  0 disk
+nvme0n5           259:8    0   32G  0 disk
+
+#Check the existing swap space
+[root@caoradb01 ~]# swapon -s
+Making the swap area
+[root@caoradb01 ~]# mkswap /dev/rootvg/swaplv
+Setting up swapspace version 1, size = 16777212 KiB
+no label, UUID=2c645288-2a89-4ac8-ae4a-2c8d812c5d88
+
+#Adding swap area details to fstab
+[root@caoradb01 ~]# vi /etc/fstab
+/dev/rootvg/swaplv  swap swap defaults 0 0
+
+#Activating the swap area
+[root@caoradb01 ~]# swapon -va
+swapon /dev/mapper/rootvg-swaplv
+swapon: /dev/mapper/rootvg-swaplv: found swap signature: version 1, page-size 4, same byte order
+swapon: /dev/mapper/rootvg-swaplv: pagesize=4096, swapsize=17179869184, devsize=17179869184
+
+#Verifying the swap area
+[root@caoradb01 ~]# swapon -s
+Filename                                Type            Size    Used    Priority
+/dev/dm-6                               partition       16777212        0       -2
+
+#Swap space should appear here
+[root@caoradb01 ~]# free -m
+              total        used        free      shared  buff/cache   available
+Mem:          15880         387       15267           8         225       15214
+Swap:         16383           0       16383
+
+**********************************************************************************************************************************************************************
+                                                                            Grid Setup
+**********************************************************************************************************************************************************************
+
+4. Setting up ASM
+
+#Configuring ASM
+[root@caoradb01 software]# oracleasm configure -i
+Configuring the Oracle ASM library driver.
+
+This will configure the on-boot properties of the Oracle ASM library
+driver.  The following questions will determine whether the driver is
+loaded on boot and what permissions it will have.  The current values
+will be shown in brackets ('[]').  Hitting <ENTER> without typing an
+answer will keep that current value.  Ctrl-C will abort.
+
+Default user to own the driver interface []: oracle
+Default group to own the driver interface []: oinstall
+Start Oracle ASM library driver on boot (y/n) [n]: y
+Scan for Oracle ASM disks on boot (y/n) [y]: y
+Writing Oracle ASM library driver configuration: done
+
+#Initialize ASM
+[root@caoradb01 software]# oracleasm init
+Creating /dev/oracleasm mount point: /dev/oracleasm
+Loading module "oracleasm": oracleasm
+Configuring "oracleasm" to use device physical block size
+Mounting ASMlib driver filesystem: /dev/oracleasm
+
+#check ASM Status
+[root@caoradb01 software]# oracleasm status
+Checking if ASM is loaded: yes
+Checking if /dev/oracleasm is mounted: yes
+
+#Partition the disk for the ASM
+[root@caoradb01 software]# parted /dev/nvme0n2 --script -a optimal mklabel gpt mkpart primary 0% 100%
+
+
+#To Start installation we have to first create ASM Disk for Voting Disk as 'root' user
+[root@caoradb01 software]# oracleasm createdisk VOT /dev/nvme0n2p1
+Writing disk header: done
+Instantiating disk: done
+
+[root@caoradb01 software]# oracleasm scandisks
+Reloading disk partitions: done
+Cleaning any stale ASM disks...
+Scanning system for ASM disks...
+[root@caoradb01 software]# oracleasm listdisks
+VOT
+
+
+5. Download the Grid and oracle 19c software from https://edelivery.oracle.com/osdc/faces/SoftwareDelivery -> Oracle Database 19c Enterprise Edition 19.3.0.0.0 as 'oracle' user
+
+    Copy Installation Software to the Software Location : /u01/app/oracle/software
+
+6. Unzip Grid Software to Grid Home Directory as 'oracle' user
+
+unzip -q /u01/app/oracle/software/V982068-01.zip -d /u01/app/19.3.0/grid
+
+7. Install required RPMs for Oracle Installation as 'root' user
+
+cd /u01/app/oracle/software/
+
+#When i tried to install required packages i got the below errors
+[root@caoradb01 ~]# yum install xterm
+Loaded plugins: langpacks, product-id, search-disabled-repos
+rhui-microsoft-azure-rhel7                                                                                                                          | 1.5 kB  00:00:00
+https://rhui-1.microsoft.com/pulp/repos//content/dist/rhel/rhui/server/7/7Server/x86_64/dotnet/1/os/repodata/repomd.xml: [Errno 14] HTTPS Error 400 - Bad Request
+Trying other mirror.
+https://rhui-2.microsoft.com/pulp/repos//content/dist/rhel/rhui/server/7/7Server/x86_64/dotnet/1/os/repodata/repomd.xml: [Errno 14] HTTPS Error 400 - Bad Request
+Trying other mirror.
+https://rhui-3.microsoft.com/pulp/repos//content/dist/rhel/rhui/server/7/7Server/x86_64/dotnet/1/os/repodata/repomd.xml: [Errno 14] HTTPS Error 400 - Bad Request
+Trying other mirror.
+
+#Steps to fix the above Error
+[root@caoradb01 ~]# yum update -y --disablerepo='*' --enablerepo='rhui-microsoft-azure-rhel7'
+Loaded plugins: langpacks, product-id, search-disabled-repos
+rhui-microsoft-azure-rhel7                                                                                                                          | 1.5 kB  00:00:00
+rhui-microsoft-azure-rhel7/primary                                                                                                                  | 2.3 kB  00:00:00
+rhui-microsoft-azure-rhel7                                                                                                                                           12/12
+Resolving Dependencies
+--> Running transaction check
+---> Package rhui-azure-rhel7.noarch 0:2.2-441 will be updated
+
+[root@caoradb01 ~]# yum clean all
+Loaded plugins: langpacks, product-id, search-disabled-repos, yum_rhui_plugin
+Cleaning repos: rhel-7-server-ansible-2-rhui-rpms rhel-7-server-dotnet-rhui-rpms rhel-7-server-rhui-extras-rpms rhel-7-server-rhui-optional-rpms
+              : rhel-7-server-rhui-rh-common-rpms rhel-7-server-rhui-rpms rhel-7-server-rhui-supplementary-rpms rhel-server-rhui-rhscl-7-rpms rhui-microsoft-azure-rhel7
+[root@caoradb01 ~]# yum repolist
+
+After fixing the above error. Im able to install packages
+
+[root@caoradb01 ~]# yum -y install xterm
+[root@caoradb01 ~]# yum -y install xhost
+[root@caoradb01 software]# yum install oracleasmlib-2.0.12-1.el7.x86_64.rpm
+
+#This will install oracleasmlib & kmod-oracleasm Modules
+[root@caoradb01 software]# yum install oracleasm-support-2.1.11-2.el7.x86_64.rpm
+
+#Download preinstall-19c package
+[root@caoradb01 software]# curl -o oracle-database-preinstall-19c-1.0-1.el7.x86_64.rpm https://yum.oracle.com/repo/OracleLinux/OL7/latest/x86_64/getPackage/oracle-database-preinstall-19c-1.0-1.el7.x86_64.rpm
+[root@caoradb01 software]# yum localinstall -y oracle-database-preinstall-19c-1.0-1.el7.x86_64.rpm
+
+# Install CVU package
+cd /u01/app/19.3.0/grid/cv/rpm/
+CVUQDISK_GRP=oinstall; export CVUQDISK_GRP
+yum localinstall cvuqdisk-1.0.10-1.rpm
+
+#Update all packages
+yum update -y
+
+8. Set SELINUX to permissive
+    vi /etc/selinux/config
+
+#Disable firewalld service
+[root@caoradb01 ~]# systemctl disable firewalld.service
+Removed symlink /etc/systemd/system/multi-user.target.wants/firewalld.service.
+Removed symlink /etc/systemd/system/dbus-org.fedoraproject.FirewallD1.service.
+
+9. Reboot the server
+
+10. Update the .bash_profile and grid_env Grid environmental variable file.
+# .bash_profile
+
+# Get the aliases and functions
+if [ -f ~/.bashrc ]; then
+        . ~/.bashrc
+fi
+
+#Oracle Settings
+TMP=/tmp; export TMP
+TMPDIR=$TMP; export TMPDIR
+
+ORACLE_BASE=/u01/app/oracle; export ORACLE_BASE
+GRID_HOME=/u01/app/19.3.0/grid; export GRID_HOME
+DB_HOME=/u01/app/19.3.0/db; export DB_HOME
+ORACLE_HOME=$DB_HOME; export ORACLE_HOME
+#ORACLE_SID=QA; export ORACLE_SID
+ORACLE_TERM=xterm; export ORACLE_TERM
+BASE_PATH=/usr/sbin:$PATH; export BASE_PATH
+PATH=$ORACLE_HOME/bin:$BASE_PATH; export PATH
+
+LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib; export LD_LIBRARY_PATH
+CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib; export CLASSPATH
+
+
+vi grid_env
+ORACLE_SID=+ASM; export ORACLE_SID
+ORACLE_HOME=$GRID_HOME; export ORACLE_HOME
+PATH=$ORACLE_HOME/bin:$BASE_PATH; export PATH
+
+LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib; export LD_LIBRARY_PATH
+CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib; export CLASSPATH
+
+
+**********************************************************************************************************************************************************************
+                                                                      Patching Grid Software 19.3.0 -> 19.32.0
+**********************************************************************************************************************************************************************
+
+11. Grid Patching
+
+(a). OPatch must be updated to version 12.2.0.1.52 prior to applying the latest CPU 19.32.0.
+[oracle@caoradb01 grid]$ /u01/app/19.3.0/grid/OPatch/opatch version
+OPatch Version: 12.2.0.1.17
+
+OPatch succeeded.
+[oracle@caoradb01 grid]$ mv OPatch OPatch_12.2.0.1.17
+[oracle@caoradb01 grid]$ unzip -q /u01/app/oracle/software/p6880880_190000_Linux-x86-64.zip -d /u01/app/19.3.0/grid/
+[oracle@caoradb01 grid]$ chmod 755 -R /u01/app/19.3.0/grid/OPatch
+[oracle@caoradb01 grid]$ chown oracle:oinstall -R /u01/app/19.3.0/grid/OPatch
+[oracle@caoradb01 grid]$ /u01/app/19.3.0/grid/OPatch/opatch version
+OPatch Version: 12.2.0.1.52
+
+OPatch succeeded.
+
+(b). Download July2026 CPU and unzip the package
+
+[oracle@caoradb01 software]$ unzip -q p39467003_190000_Linux-x86-64.zip
+
+(c). Setting the environment to RHEL7.8
+oracle@caoradb01 software]$ export CV_ASSUME_DISTID=RHEL7.8
+
+(d). Apply 19.32.0 RU on 19.3.0 Grid software
+[oracle@caoradb01 software]$ /u01/app/19.3.0/grid/gridSetup.sh -silent -applyRU /u01/app/oracle/software/39467003
+Preparing the home to patch...
+Applying the patch /u01/app/oracle/software/39467003...
+Successfully applied the patch.
+The log can be found at: /tmp/GridSetupActions2026-08-15_05-32-25AM/installerPatchActions_2026-08-15_05-32-25AM.log
+Launching Oracle Grid Infrastructure Setup Wizard...
+
+[FATAL] [INS-40426] Grid installation option has not been specified.
+   ACTION: Specify the valid installation option.
+   
+# However, immediately afterward, the installer reported:
+#[FATAL] [INS-40426] Grid installation option has not been specified. ACTION: Specify the valid installation option.
+#At first glance, that looks like the patch operation failed.
+#It didn’t.
+#The important distinction is that the patch application completed successfully, while the Grid setup process subsequently continued into installation mode and complained because an installation option had not been provided. 
+
+(e). Run the cluster verification utility before installing Grid Software.
+[oracle@caoradb01 software]$ /u01/app/19.3.0/grid/runcluvfy.sh stage -pre hacfg
+
+Performing following verification checks ...
+
+  Physical Memory ...PASSED
+  Available Physical Memory ...PASSED
+  Swap Size ...PASSED
+  Free Space: caoradb01:/usr,caoradb01:/sbin ...PASSED
+  Free Space: caoradb01:/var ...PASSED
+  Free Space: caoradb01:/etc ...PASSED
+  Free Space: caoradb01:/tmp ...PASSED
+  User Existence: oracle ...
+    Users With Same UID: 501 ...PASSED
+  User Existence: oracle ...PASSED
+  Group Existence: dba ...PASSED
+  Group Membership: dba ...PASSED
+  Run Level ...PASSED
+  Users With Same UID: 0 ...PASSED
+  Current Group ID ...PASSED
+  Root user consistency ...PASSED
+
+Pre-check for Oracle Restart configuration was successful.
+
+CVU operation performed:      stage -pre hacfg
+Date:                         Aug 15, 2026 5:45:05 AM
+CVU version:                  19.32.0.0.0 (070326x8664)
+CVU home:                     /u01/app/19.3.0/grid
+User:                         oracle
+Operating system:             Linux3.10.0-1160.83.1.el7.x86_64
+
+(f). Cluster Verification using sudo
+[oracle@caoradb01 software]$ /u01/app/19.3.0/grid/runcluvfy.sh stage -pre crsinst -n caoradb01 -verbose -method sudo -user oracle
+Enter "SUDO" password:
+
+
+PRCZ-2004 : File "/usr/local/bin/sudo" was not found
+PRKC-1002 : Not all the submitted commands completed successfully.
+
+This was common to both RHEL 7.9 and RHEL 8.10.
+
+#Fix 
+ln -s /usr/bin/sudo /usr/local/bin/sudo
+
+#Running the verification script again
+[oracle@caoradb01 rpm]$ /u01/app/19.3.0/grid/runcluvfy.sh stage -pre crsinst -n caoradb01 -verbose -method sudo -user oracle
+Enter "SUDO" password:
+
+Performing following verification checks ...
+
+  Physical Memory ...
+  Node Name     Available                 Required                  Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     15.5084GB (1.6261744E7KB)  8GB (8388608.0KB)         passed
+  Physical Memory ...PASSED
+  Available Physical Memory ...
+  Node Name     Available                 Required                  Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     14.4019GB (1.510152E7KB)  50MB (51200.0KB)          passed
+  Available Physical Memory ...PASSED
+  Swap Size ...
+  Node Name     Available                 Required                  Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     16GB (1.6777212E7KB)      15.5084GB (1.6261744E7KB)  passed
+  Swap Size ...PASSED
+  Free Space: caoradb01:/usr,caoradb01:/sbin ...
+  Path              Node Name     Mount point   Available     Required      Status
+  ----------------  ------------  ------------  ------------  ------------  ------------
+  /usr              caoradb01     /usr          8.8203GB      25MB          passed
+  /sbin             caoradb01     /usr          8.8203GB      10MB          passed
+  Free Space: caoradb01:/usr,caoradb01:/sbin ...PASSED
+  Free Space: caoradb01:/var ...
+  Path              Node Name     Mount point   Available     Required      Status
+  ----------------  ------------  ------------  ------------  ------------  ------------
+  /var              caoradb01     /var          7.3213GB      5MB           passed
+  Free Space: caoradb01:/var ...PASSED
+  Free Space: caoradb01:/etc ...
+  Path              Node Name     Mount point   Available     Required      Status
+  ----------------  ------------  ------------  ------------  ------------  ------------
+  /etc              caoradb01     /             65.9577GB     25MB          passed
+  Free Space: caoradb01:/etc ...PASSED
+  Free Space: caoradb01:/tmp ...
+  Path              Node Name     Mount point   Available     Required      Status
+  ----------------  ------------  ------------  ------------  ------------  ------------
+  /tmp              caoradb01     /tmp          2.0137GB      1GB           passed
+  Free Space: caoradb01:/tmp ...PASSED
+  User Existence: oracle ...
+  Node Name     Status                    Comment
+  ------------  ------------------------  ------------------------
+  caoradb01     passed                    exists(501)
+
+    Users With Same UID: 501 ...PASSED
+  User Existence: oracle ...PASSED
+  Group Existence: asmadmin ...
+  Node Name     Status                    Comment
+  ------------  ------------------------  ------------------------
+  caoradb01     passed                    exists
+  Group Existence: asmadmin ...PASSED
+  Group Existence: asmdba ...
+  Node Name     Status                    Comment
+  ------------  ------------------------  ------------------------
+  caoradb01     passed                    exists
+  Group Existence: asmdba ...PASSED
+  Group Existence: oinstall ...
+  Node Name     Status                    Comment
+  ------------  ------------------------  ------------------------
+  caoradb01     passed                    exists
+  Group Existence: oinstall ...PASSED
+  Group Membership: asmadmin ...
+  Node Name         User Exists   Group Exists  User in Group  Status
+  ----------------  ------------  ------------  ------------  ----------------
+  caoradb01         yes           yes           yes           passed
+  Group Membership: asmadmin ...PASSED
+  Group Membership: asmdba ...
+  Node Name         User Exists   Group Exists  User in Group  Status
+  ----------------  ------------  ------------  ------------  ----------------
+  caoradb01         yes           yes           yes           passed
+  Group Membership: asmdba ...PASSED
+  Group Membership: oinstall(Primary) ...
+  Node Name         User Exists   Group Exists  User in Group  Primary       Status
+  ----------------  ------------  ------------  ------------  ------------  ------------
+  caoradb01         yes           yes           yes           yes           passed
+  Group Membership: oinstall(Primary) ...PASSED
+  Run Level ...
+  Node Name     run level                 Required                  Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     3                         3,5,3,5                   passed
+  Run Level ...PASSED
+  Users With Same UID: 0 ...PASSED
+  Current Group ID ...PASSED
+  Root user consistency ...
+  Node Name                             Status
+  ------------------------------------  ------------------------
+  caoradb01                             passed
+  Root user consistency ...PASSED
+  Package: cvuqdisk-1.0.10-1 ...
+  Node Name     Available                 Required                  Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     cvuqdisk-1.0.10-1         cvuqdisk-1.0.10-1         passed
+  Package: cvuqdisk-1.0.10-1 ...PASSED
+  Host name ...PASSED
+  Node Connectivity ...
+    Hosts File ...
+  Node Name                             Status
+  ------------------------------------  ------------------------
+  caoradb01                             passed
+    Hosts File ...PASSED
+
+Interface information for node "caoradb01"
+
+ Name   IP Address      Subnet          Gateway         Def. Gateway    HW Address        MTU
+ ------ --------------- --------------- --------------- --------------- ----------------- ------
+ eth0   172.16.0.4      172.16.0.0      0.0.0.0         172.16.0.1      00:0D:3A:52:C1:E0 1500
+
+Check: MTU consistency of the subnet "172.16.0.0".
+
+  Node              Name          IP Address    Subnet        MTU
+  ----------------  ------------  ------------  ------------  ----------------
+  caoradb01         eth0          172.16.0.4    172.16.0.0    1500
+    Check that maximum (MTU) size packet goes through subnet ...PASSED
+  Node Connectivity ...PASSED
+  Multicast or broadcast check ...
+Checking subnet "172.16.0.0" for multicast communication with multicast group "224.0.0.251"
+  Multicast or broadcast check ...PASSED
+  ASMLib installation and configuration verification. ...
+    '/etc/init.d/oracleasm' ...PASSED
+    '/dev/oracleasm' ...PASSED
+    '/etc/sysconfig/oracleasm' ...PASSED
+
+  Node Name                             Status
+  ------------------------------------  ------------------------
+  caoradb01                             passed
+  ASMLib installation and configuration verification. ...PASSED
+  Network Time Protocol (NTP) ...
+    '/etc/chrony.conf' ...
+  Node Name                             File exists?
+  ------------------------------------  ------------------------
+  caoradb01                             yes
+
+    '/etc/chrony.conf' ...PASSED
+    Daemon 'chronyd' ...
+  Node Name                             Running?
+  ------------------------------------  ------------------------
+  caoradb01                             yes
+
+    Daemon 'chronyd' ...PASSED
+    NTP daemon or service using UDP port 123 ...
+  Node Name                             Port Open?
+  ------------------------------------  ------------------------
+  caoradb01                             yes
+
+    NTP daemon or service using UDP port 123 ...PASSED
+    chrony daemon is synchronized with at least one external time source ...PASSED
+  Network Time Protocol (NTP) ...PASSED
+  Same core file name pattern ...PASSED
+  User Mask ...
+  Node Name     Available                 Required                  Comment
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     0022                      0022                      passed
+  User Mask ...PASSED
+  User Not In Group "root": oracle ...
+  Node Name     Status                    Comment
+  ------------  ------------------------  ------------------------
+  caoradb01     passed                    does not exist
+  User Not In Group "root": oracle ...PASSED
+  Time zone consistency ...PASSED
+  Path existence, ownership, permissions and attributes ...
+    Path "/var" ...PASSED
+    Path "/dev/shm" ...PASSED
+  Path existence, ownership, permissions and attributes ...PASSED
+  resolv.conf Integrity ...
+  Node Name                             Status
+  ------------------------------------  ------------------------
+  caoradb01                             passed
+
+checking response for name "caoradb01" from each of the name servers specified
+in "/etc/resolv.conf"
+
+  Node Name     Source                    Comment                   Status
+  ------------  ------------------------  ------------------------  ----------
+  caoradb01     168.63.129.16             IPv4                      passed
+  resolv.conf Integrity ...PASSED
+  DNS/NIS name service ...PASSED
+  Domain Sockets ...PASSED
+  Daemon "avahi-daemon" not configured and running ...
+  Node Name     Configured                Status
+  ------------  ------------------------  ------------------------
+  caoradb01     no                        passed
+
+  Node Name     Running?                  Status
+  ------------  ------------------------  ------------------------
+  caoradb01     no                        passed
+  Daemon "avahi-daemon" not configured and running ...PASSED
+  Daemon "proxyt" not configured and running ...
+  Node Name     Configured                Status
+  ------------  ------------------------  ------------------------
+  caoradb01     no                        passed
+
+  Node Name     Running?                  Status
+  ------------  ------------------------  ------------------------
+  caoradb01     no                        passed
+  Daemon "proxyt" not configured and running ...PASSED
+  User Equivalence ...PASSED
+  RPM Package Manager database ...PASSED
+  Maximum locked memory check ...PASSED
+  /dev/shm mounted as temporary file system ...FAILED (PRVE-0421)
+  File system mount options for path /var ...PASSED
+  DefaultTasksMax parameter ...PASSED
+  zeroconf check ...FAILED
+  ASM Filter Driver configuration ...PASSED
+  ORAchk checks ...INFORMATION (PRVH-1507)
+
+Pre-check for cluster services setup was unsuccessful on all the nodes.
+
+
+Failures were encountered during execution of CVU verification request "stage -pre crsinst".
+
+/dev/shm mounted as temporary file system ...FAILED
+caoradb01: PRVE-0421 : No entry exists in /etc/fstab for mounting /dev/shm
+
+zeroconf check ...FAILED
+caoradb01: PRVE-10077 : NOZEROCONF parameter was not  specified or was not set
+           to 'yes' in file "/etc/sysconfig/network" on node "caoradb01"
+
+ORAchk checks ...INFORMATION
+PRVH-1507 : ORAchk/EXAchk checks are skipped.
+
+
+CVU operation performed:      stage -pre crsinst
+Date:                         Aug 15, 2026 5:47:56 AM
+CVU version:                  19.32.0.0.0 (070326x8664)
+CVU home:                     /u01/app/19.3.0/grid
+User:                         oracle
+Operating system:             Linux3.10.0-1160.83.1.el7.x86_64
+
+#This cluster verification utility reported that /dev/shm doesn't exists in /etc/fstab even if it's mounted.
+#Add entry to /etc/fstab and remount it
+[root@caoradb01 rpm]# vi /etc/fstab
+tmpfs   /dev/shm   tmpfs   defaults,size=50%   0 0
+
+[root@caoradb01 rpm]# mount -o remount /dev/shm
+
+#Add NOZEROCONF=yes to /etc/sysconfig/network
+[root@caoradb01 rpm]# vi /etc/sysconfig/network
+NOZEROCONF=yes
+
+(g). Run Cluster Verification Utility to check the prerequisite as 'oracle' user
+
+    All the pre check has to be passed if not check for the errors.
+
+  Daemon "proxyt" not configured and running ...PASSED
+  User Equivalence ...PASSED
+  RPM Package Manager database ...PASSED
+  Maximum locked memory check ...PASSED
+  /dev/shm mounted as temporary file system ...PASSED
+  File system mount options for path /var ...PASSED
+  DefaultTasksMax parameter ...PASSED
+  zeroconf check ...PASSED
+  ASM Filter Driver configuration ...PASSED
+  ORAchk checks ...INFORMATION (PRVH-1507)
+
+Pre-check for cluster services setup was successful.
+ORAchk checks ...INFORMATION
+PRVH-1507 : ORAchk/EXAchk checks are skipped.
+
+
+CVU operation performed:      stage -pre crsinst
+Date:                         Aug 15, 2026 5:54:16 AM
+CVU version:                  19.32.0.0.0 (070326x8664)
+CVU home:                     /u01/app/19.3.0/grid
+User:                         oracle
+Operating system:             Linux3.10.0-1160.83.1.el7.x86_64
+
+
+**********************************************************************************************************************************************************************
+                                                                          Grid Software Installation
+**********************************************************************************************************************************************************************
+
+12. To Start Grid Installation in silent mode we have to first modify the response file as 'oracle' user
+
+(a). Taking the backup of existing response file before modification.
+
+ls -lrth /u01/app/19.3.0/grid/install/response/gridsetup.rsp
+
+cp -prf /u01/app/19.3.0/grid/install/response/gridsetup.rsp /u01/app/19.3.0/grid/install/response/gridsetup.rsp.bkp
+vi /u01/app/19.3.0/grid/install/response/gridsetup.rsp
+
+(b). Modify the response file
+
+oracle.install.responseFileVersion=/oracle/install/rspfmt_crsinstall_response_schema_v19.0.0
+INVENTORY_LOCATION=/u01/app/oraInventory
+oracle.install.option=HA_CONFIG
+ORACLE_BASE=/u01/app/oracle
+oracle.install.asm.OSDBA=oinstall
+oracle.install.asm.OSOPER=oinstall
+oracle.install.asm.OSASM=oinstall
+oracle.install.crs.config.scanType=LOCAL_SCAN
+oracle.install.crs.config.ClusterConfiguration=STANDALONE
+oracle.install.crs.config.configureAsExtendedCluster=false
+oracle.install.crs.config.gpnp.configureGNS=false
+oracle.install.crs.config.autoConfigureClusterNodeVIP=false
+oracle.install.crs.config.gpnp.gnsOption=CREATE_NEW_GNS
+oracle.install.crs.configureGIMR=false
+oracle.install.asm.configureGIMRDataDG=false
+oracle.install.crs.config.useIPMI=false
+oracle.install.asm.SYSASMPassword=***********
+oracle.install.asm.diskGroup.name=VOT
+oracle.install.asm.diskGroup.redundancy=EXTERNAL
+oracle.install.asm.diskGroup.AUSize=4
+oracle.install.asm.diskGroup.disksWithFailureGroupNames=/dev/oracleasm/disks/VOT,
+oracle.install.asm.diskGroup.disks=/dev/oracleasm/disks/VOT
+oracle.install.asm.diskGroup.diskDiscoveryString=/dev/oracleasm/disks/*
+oracle.install.asm.monitorPassword=***************
+oracle.install.asm.configureAFD=false
+oracle.install.crs.configureRHPS=false
+oracle.install.crs.config.ignoreDownNodes=false
+oracle.install.config.managementOption=NONE
+oracle.install.crs.rootconfig.executeRootScript=false
+
+13. Start the Silent Grid Installation using response file as 'oracle' user
+
+(a). Grid software installation
+
+[oracle@caoradb01 rpm]$ /u01/app/19.3.0/grid/gridSetup.sh -silent -responseFile /u01/app/oracle/software/gridSetup.rsp
+Launching Oracle Grid Infrastructure Setup Wizard...
+
+The response file for this session can be found at:
+ /u01/app/19.3.0/grid/install/response/grid_2026-08-15_05-55-14AM.rsp
+
+You can find the log of this install session at:
+ /tmp/GridSetupActions2026-08-15_05-55-14AM/gridSetupActions2026-08-15_05-55-14AM.log
+
+As a root user, execute the following script(s):
+        1. /u01/app/oraInventory/orainstRoot.sh
+        2. /u01/app/19.3.0/grid/root.sh
+
+Execute /u01/app/19.3.0/grid/root.sh on the following nodes:
+[caoradb01]
+
+
+
+Successfully Setup Software.
+As install user, execute the following command to complete the configuration.
+        /u01/app/19.3.0/grid/gridSetup.sh -executeConfigTools -responseFile /u01/app/oracle/software/gridSetup.rsp [-silent]
+
+
+Moved the install session logs to:
+ /u01/app/oraInventory/logs/GridSetupActions2026-08-15_05-55-14AM
+
+
+(b). Execute oraInstRoot.sh & root.sh scripts as 'root' user
+
+#Executing oraInstRoot.sh
+[root@caoradb01 rpm]# /u01/app/oraInventory/orainstRoot.sh
+Changing permissions of /u01/app/oraInventory.
+Adding read,write permissions for group.
+Removing read,write,execute permissions for world.
+
+Changing groupname of /u01/app/oraInventory to oinstall.
+The execution of the script is complete.
+
+#Executing root.sh
+[root@caoradb01 rpm]# /u01/app/19.3.0/grid/root.sh
+Check /u01/app/19.3.0/grid/install/root_caoradb01_2026-08-15_05-56-35-588061402.log for the output of root script
+
+#root.sh output log
+[root@caoradb01 rpm]# cat /u01/app/19.3.0/grid/install/root_caoradb01_2026-08-15_05-56-35-588061402.log
+Performing root user operation.
+
+The following environment variables are set as:
+    ORACLE_OWNER= oracle
+    ORACLE_HOME=  /u01/app/19.3.0/grid
+   Copying dbhome to /usr/local/bin ...
+   Copying oraenv to /usr/local/bin ...
+   Copying coraenv to /usr/local/bin ...
+
+
+Creating /etc/oratab file...
+Entries will be added to the /etc/oratab file as needed by
+Database Configuration Assistant when a database is created
+Finished running generic part of root script.
+Now product-specific root actions will be performed.
+Using configuration parameter file: /u01/app/19.3.0/grid/crs/install/crsconfig_params
+The log of current session can be found at:
+  /u01/app/oracle/crsdata/caoradb01/crsconfig/roothas_2026-08-15_05-56-35AM.log
+Redirecting to /bin/systemctl restart rsyslog.service
+LOCAL ADD MODE
+Creating OCR keys for user 'oracle', privgrp 'oinstall'..
+Operation successful.
+LOCAL ONLY MODE
+Successfully accumulated necessary OCR keys.
+Creating OCR keys for user 'root', privgrp 'root'..
+Operation successful.
+CRS-4664: Node caoradb01 successfully pinned.
+2026/08/15 05:56:59 CLSRSC-330: Adding Clusterware entries to file 'oracle-ohasd.service'
+
+caoradb01     2026/08/15 05:57:30     /u01/app/oracle/crsdata/caoradb01/olr/backup_20260815_055730.olr     3004609525
+2026/08/15 05:57:30 CLSRSC-327: Successfully configured Oracle Restart for a standalone server
+
+
+(c). Run the following command to complete the Grid Infrastructure installation.
+
+[oracle@caoradb01 rpm]$ /u01/app/19.3.0/grid/gridSetup.sh -executeConfigTools -responseFile /u01/app/oracle/software/gridSetup.rsp -silent
+Launching Oracle Grid Infrastructure Setup Wizard...
+
+You can find the logs of this session at:
+/u01/app/oraInventory/logs/GridSetupActions2026-08-15_05-58-14AM
+
+You can find the log of this install session at:
+ /u01/app/oraInventory/logs/UpdateNodeList2026-08-15_05-58-14AM.log
+Successfully Configured Software.
+
+14. Check the cluster installation status as 'root' user
+
+(a). Verify Cluster resources
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/grid/bin/crsctl stat res -init -t
+--------------------------------------------------------------------------------
+Name           Target  State        Server                   State details
+--------------------------------------------------------------------------------
+Local Resources
+--------------------------------------------------------------------------------
+ora.LISTENER.lsnr
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.VOT.dg
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.asm
+               ONLINE  ONLINE       caoradb01                Started,STABLE
+ora.ons
+               OFFLINE OFFLINE      caoradb01                STABLE
+--------------------------------------------------------------------------------
+Cluster Resources
+--------------------------------------------------------------------------------
+ora.cssd
+      1        ONLINE  ONLINE       caoradb01                STABLE
+ora.diskmon
+      1        OFFLINE OFFLINE                               STABLE
+ora.evmd
+      1        ONLINE  ONLINE       caoradb01                STABLE
+--------------------------------------------------------------------------------
+
+(b). Verify the processes running 
+
+[oracle@caoradb01 ~]$ ps -ef | grep d.bin | grep -v grep
+oracle    2776     1  0 03:21 ?        00:00:07 /u01/app/19.3.0/grid/bin/ohasd.bin reboot
+oracle    2963     1  0 03:22 ?        00:00:13 /u01/app/19.3.0/grid/bin/oraagent.bin
+oracle    2990     1  0 03:22 ?        00:00:03 /u01/app/19.3.0/grid/bin/evmd.bin
+oracle    2999     1  0 03:22 ?        00:00:00 /u01/app/19.3.0/grid/bin/tnslsnr LISTENER -no_crs_notify -inherit
+oracle    3055  2990  0 03:22 ?        00:00:02 /u01/app/19.3.0/grid/bin/evmlogger.bin -o /u01/app/19.3.0/grid/log/[HOSTNAME]/evmd/evmlogger.info -l /u01/app/19.3.0/grid/log/[HOSTNAME]/evmd/evmlogger.log
+oracle    3080     1  0 03:22 ?        00:00:04 /u01/app/19.3.0/grid/bin/cssdagent
+oracle    3123     1  0 03:22 ?        00:00:05 /u01/app/19.3.0/grid/bin/ocssd.bin
+
+
+(c). Check the installed patches and inventory
+
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/grid/OPatch/opatch lspatches
+39526364;OCW RELEASE UPDATE 19.32.0.0.0 (39526364)
+39503034;ACFS RELEASE UPDATE 19.32.0.0.0 (39503034)
+39472050;Database Release Update : 19.32.0.0.260721 (39472050)
+39107855;TOMCAT RELEASE UPDATE 19.0.0.0.0 (39107855)
+39107825;DBWLM RELEASE UPDATE 19.0.0.0.0 (39107825)
+
+OPatch succeeded.
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/grid/OPatch/opatch version
+OPatch Version: 12.2.0.1.52
+
+OPatch succeeded.
+
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/grid/OPatch/opatch lsinventory | grep -i applied
+Patch  39526364     : applied on Sat Aug 15 05:39:27 UTC 2026
+Patch  39503034     : applied on Sat Aug 15 05:39:01 UTC 2026
+Patch  39472050     : applied on Sat Aug 15 05:37:07 UTC 2026
+Patch  39107855     : applied on Sat Aug 15 05:35:19 UTC 2026
+Patch  39107825     : applied on Sat Aug 15 05:35:04 UTC 2026
+
+**********************************************************************************************************************************************************************
+                                                                          Database installation
+**********************************************************************************************************************************************************************
+
+15. Unzip Database Software to Database Home Directory as 'oracle' user
+
+cd /u01/app/oracle/software
+unzip -q /u01/app/oracle/software/V982063-01.zip -d /u01/app/19.3.0/db
+
+16. To Start Database Installation in silent mode we have to first modify the response file as 'oracle' user
+
+(a). Taking the backup of existing response file before modification.
+
+ls -lrth /u01/app/19.3.0/db/install/response/db_install.rsp
+
+cp -prf /u01/app/19.3.0/db/install/response/db_install.rsp /u01/app/19.3.0/db/install/response/db_install.rsp.bkp
+
+
+(b). Modify the response file
+
+oracle.install.option=INSTALL_DB_SWONLY
+UNIX_GROUP_NAME=oinstall
+INVENTORY_LOCATION=/u01/app/oraInventory
+ORACLE_HOME=/u01/app/19.3.0/db
+ORACLE_BASE=/u01/app/oracle
+oracle.install.db.InstallEdition=EE
+oracle.install.db.OSDBA_GROUP=oinstall
+oracle.install.db.OSOPER_GROUP=dba
+oracle.install.db.OSBACKUPDBA_GROUP=oinstall
+oracle.install.db.OSDGDBA_GROUP=oinstall
+oracle.install.db.OSKMDBA_GROUP=oinstall
+oracle.install.db.OSRACDBA_GROUP=oinstall
+oracle.install.db.rootconfig.executeRootScript=false
+oracle.install.db.ConfigureAsContainerDB=false
+oracle.install.db.config.starterdb.memoryOption=false
+oracle.install.db.config.starterdb.installExampleSchemas=false
+oracle.install.db.config.starterdb.managementOption=DEFAULT
+oracle.install.db.config.starterdb.enableRecovery=false
+
+17. Run prerequisites check as 'oracle' user
+
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/db/runInstaller -executePrereqs -silent -responseFile /u01/app/oracle/software/db_install.rsp
+Launching Oracle Database Setup Wizard...
+
+Prerequisite checks executed successfully.
+
+18. Start the Silent Database Installation using response file as root
+
+(a). Database software installation as 'oracle' user
+
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/db/runInstaller -silent -responseFile /u01/app/oracle/software/db_install.rsp
+Launching Oracle Database Setup Wizard...
+
+The response file for this session can be found at:
+ /u01/app/19.3.0/db/install/response/db_2026-08-15_06-04-37AM.rsp
+
+You can find the log of this install session at:
+ /u01/app/oraInventory/logs/InstallActions2026-08-15_06-04-37AM/installActions2026-08-15_06-04-37AM.log
+
+As a root user, execute the following script(s):
+        1. /u01/app/19.3.0/db/root.sh
+
+Execute /u01/app/19.3.0/db/root.sh on the following nodes:
+[caoradb01]
+
+
+Successfully Setup Software.
+
+(b). Execute root.sh as 'root' user
+
+[root@caoradb01 rpm]# /u01/app/19.3.0/db/root.sh
+Check /u01/app/19.3.0/db/install/root_caoradb01_2026-08-15_06-05-20-008583463.log for the output of root script
+
+#root.sh output log File
+
+Performing root user operation.
+
+The following environment variables are set as:
+    ORACLE_OWNER= oracle
+    ORACLE_HOME=  /u01/app/19.3.0/db
+   Copying dbhome to /usr/local/bin ...
+   Copying oraenv to /usr/local/bin ...
+   Copying coraenv to /usr/local/bin ...
+
+Entries will be added to the /etc/oratab file as needed by
+Database Configuration Assistant when a database is created
+Finished running generic part of root script.
+Now product-specific root actions will be performed.
+Oracle Trace File Analyzer (TFA) is available at : /u01/app/19.3.0/db/bin/tfactl
+
+**********************************************************************************************************************************************************************
+                                                                        Patching Database 19.3.0 -> 19.32.0
+**********************************************************************************************************************************************************************
+
+19. Database Patching to 19.32.0
+
+(a). OPatch must be updated to version 12.2.0.1.52 prior to applying the latest CPU 19.32.0.
+[oracle@caoradb01 db]$ /u01/app/19.3.0/db/OPatch/opatch version
+OPatch Version: 12.2.0.1.17
+
+OPatch succeeded.
+[oracle@caoradb01 db]$ mv OPatch OPatch_12.2.0.1.17
+[oracle@caoradb01 db]$ unzip -q /u01/app/oracle/software/p6880880_190000_Linux-x86-64.zip -d /u01/app/19.3.0/db/
+[oracle@caoradb01 db]$ chmod 755 -R /u01/app/19.3.0/db/OPatch
+[oracle@caoradb01 db]$ chown oracle:oinstall -R /u01/app/19.3.0/db/OPatch
+[oracle@caoradb01 db]$ /u01/app/19.3.0/db/OPatch/opatch version
+OPatch Version: 12.2.0.1.52
+
+OPatch succeeded.
+
+(b). Check DB Inventory and patches installed
+[oracle@caoradb01 db]$ $ORACLE_HOME/OPatch/opatch lspatches
+29585399;OCW RELEASE UPDATE 19.3.0.0.0 (29585399)
+29517242;Database Release Update : 19.3.0.0.190416 (29517242)
+
+OPatch succeeded.
+[oracle@caoradb01 db]$ $ORACLE_HOME/OPatch/opatch lsinventory | grep -i applied
+Patch  29585399     : applied on Thu Apr 18 07:21:33 UTC 2019
+Patch  29517242     : applied on Thu Apr 18 07:21:17 UTC 2019
+
+(c). Applying 19.32.0 patch
+[oracle@caoradb01 39472050]$ $ORACLE_HOME/OPatch/opatch apply
+Oracle Interim Patch Installer version 12.2.0.1.52
+Copyright (c) 2026, Oracle Corporation.  All rights reserved.
+
+
+Oracle Home       : /u01/app/19.3.0/db
+Central Inventory : /u01/app/oraInventory
+   from           : /u01/app/19.3.0/db/oraInst.loc
+OPatch version    : 12.2.0.1.52
+OUI version       : 12.2.0.7.0
+Log file location : /u01/app/19.3.0/db/cfgtoollogs/opatch/opatch2026-08-15_06-06-56AM_1.log
+
+Verifying environment and performing prerequisite checks...
+
+--------------------------------------------------------------------------------
+Start OOP by Prereq process.
+Launch OOP...
+
+Oracle Interim Patch Installer version 12.2.0.1.52
+Copyright (c) 2026, Oracle Corporation.  All rights reserved.
+
+
+Oracle Home       : /u01/app/19.3.0/db
+Central Inventory : /u01/app/oraInventory
+   from           : /u01/app/19.3.0/db/oraInst.loc
+OPatch version    : 12.2.0.1.52
+OUI version       : 12.2.0.7.0
+Log file location : /u01/app/19.3.0/db/cfgtoollogs/opatch/opatch2026-08-15_06-07-37AM_1.log
+
+Verifying environment and performing prerequisite checks...
+OPatch continues with these patches:   39472050
+
+Do you want to proceed? [y|n]
+y
+User Responded with: Y
+All checks passed.
+
+Please shutdown Oracle instances running out of this ORACLE_HOME on the local system.
+(Oracle Home = '/u01/app/19.3.0/db')
+
+
+Is the local system ready for patching? [y|n]
+y
+User Responded with: Y
+Backing up files...
+Applying interim patch '39472050' to OH '/u01/app/19.3.0/db'
+ApplySession: Optional component(s) [ oracle.network.gsm, 19.0.0.0.0 ] , [ oracle.assistants.asm, 19.0.0.0.0 ] , [ oracle.datamining, 19.0.0.0.0 ] , [ oracle.crypto.rsf, 19.0.0.0.0 ] , [ oracle.oraolap.mgmt, 19.0.0.0.0 ] , [ oracle.pg4appc, 19.0.0.0.0 ] , [ oracle.precomp.companion, 19.0.0.0.0 ] , [ oracle.rdbms.ic, 19.0.0.0.0 ] , [ oracle.java.sqlj.sqljruntime, 19.0.0.0.0 ] , [ oracle.rdbms.tg4db2, 19.0.0.0.0 ] , [ oracle.sdo.companion, 19.0.0.0.0 ] , [ oracle.tfa, 19.0.0.0.0 ] , [ oracle.rdbms.tg4ifmx, 19.0.0.0.0 ] , [ oracle.oid.client, 19.0.0.0.0 ] , [ oracle.rdbms.tg4sybs, 19.0.0.0.0 ] , [ oracle.ldap.ztk, 19.0.0.0.0 ] , [ oracle.ons.eons.bwcompat, 19.0.0.0.0 ] , [ oracle.net.cman, 19.0.0.0.0 ] , [ oracle.ons.cclient, 19.0.0.0.0 ] , [ oracle.xdk.companion, 19.0.0.0.0 ] , [ oracle.options.olap, 19.0.0.0.0 ] , [ oracle.rdbms.tg4msql, 19.0.0.0.0 ] , [ oracle.rdbms.tg4tera, 19.0.0.0.0 ] , [ oracle.network.cman, 19.0.0.0.0 ] , [ oracle.options.olap.api, 19.0.0.0.0 ] , [ oracle.jdk, 1.8.0.191.0 ] , [ oracle.jdk, 1.8.0.391.11 ]  not present in the Oracle Home or a higher version is found.
+
+Patching component oracle.rdbms.util, 19.0.0.0.0...
+
+Patching component oracle.rdbms.rsf, 19.0.0.0.0...
+
+Patching component oracle.rdbms, 19.0.0.0.0...
+
+Patching component oracle.assistants.acf, 19.0.0.0.0...
+
+Patching component oracle.assistants.deconfig, 19.0.0.0.0...
+
+Patching component oracle.assistants.server, 19.0.0.0.0...
+
+Patching component oracle.blaslapack, 19.0.0.0.0...
+
+Patching component oracle.buildtools.rsf, 19.0.0.0.0...
+
+Patching component oracle.wwg.plsql, 19.0.0.0.0...
+
+Patching component oracle.ctx, 19.0.0.0.0...
+
+Patching component oracle.dbdev, 19.0.0.0.0...
+
+Patching component oracle.dbjava.ic, 19.0.0.0.0...
+
+Patching component oracle.dbjava.jdbc, 19.0.0.0.0...
+
+Patching component oracle.dbjava.ucp, 19.0.0.0.0...
+
+Patching component oracle.duma, 19.0.0.0.0...
+
+Patching component oracle.javavm.client, 19.0.0.0.0...
+
+Patching component oracle.ldap.client, 19.0.0.0.0...
+
+Patching component oracle.ldap.owm, 19.0.0.0.0...
+
+Patching component oracle.ldap.rsf, 19.0.0.0.0...
+
+Patching component oracle.ldap.security.osdt, 19.0.0.0.0...
+
+Patching component oracle.marvel, 19.0.0.0.0...
+
+Patching component oracle.network.rsf, 19.0.0.0.0...
+
+Patching component oracle.nlsrtl.rsf, 19.0.0.0.0...
+
+Patching component oracle.nlsrtl.rsf.core, 19.0.0.0.0...
+
+Patching component oracle.nlsrtl.rsf.ic, 19.0.0.0.0...
+
+Patching component oracle.swd.oui, 12.2.0.7.0...
+
+Patching component oracle.odbc.ic, 19.0.0.0.0...
+
+Patching component oracle.ons, 19.0.0.0.0...
+
+Patching component oracle.ons.ic, 19.0.0.0.0...
+
+Patching component oracle.oracore.rsf, 19.0.0.0.0...
+
+Patching component oracle.precomp.common.core, 19.0.0.0.0...
+
+Patching component oracle.precomp.rsf, 19.0.0.0.0...
+
+Patching component oracle.rdbms.crs, 19.0.0.0.0...
+
+Patching component oracle.rdbms.dbscripts, 19.0.0.0.0...
+
+Patching component oracle.rdbms.deconfig, 19.0.0.0.0...
+
+Patching component oracle.rdbms.install.common, 19.0.0.0.0...
+
+Patching component oracle.rdbms.oci, 19.0.0.0.0...
+
+Patching component oracle.rdbms.rsf.ic, 19.0.0.0.0...
+
+Patching component oracle.rdbms.scheduler, 19.0.0.0.0...
+
+Patching component oracle.rhp.db, 19.0.0.0.0...
+
+Patching component oracle.rsf, 19.0.0.0.0...
+
+Patching component oracle.sdo, 19.0.0.0.0...
+
+Patching component oracle.sdo.locator.jrf, 19.0.0.0.0...
+
+Patching component oracle.sqlj.sqljruntime, 19.0.0.0.0...
+
+Patching component oracle.sqlplus, 19.0.0.0.0...
+
+Patching component oracle.sqlplus.ic, 19.0.0.0.0...
+
+Patching component oracle.tfa.db, 19.0.0.0.0...
+
+Patching component oracle.xdk.rsf, 19.0.0.0.0...
+
+Patching component oracle.rdbms.hs_common, 19.0.0.0.0...
+
+Patching component oracle.javavm.server, 19.0.0.0.0...
+
+Patching component oracle.rdbms.install.plugins, 19.0.0.0.0...
+
+Patching component oracle.rdbms.locator, 19.0.0.0.0...
+
+Patching component oracle.oraolap.api, 19.0.0.0.0...
+
+Patching component oracle.rdbms.hsodbc, 19.0.0.0.0...
+
+Patching component oracle.network.client, 19.0.0.0.0...
+
+Patching component oracle.rdbms.drdaas, 19.0.0.0.0...
+
+Patching component oracle.rdbms.dm, 19.0.0.0.0...
+
+Patching component oracle.rdbms.rman, 19.0.0.0.0...
+
+Patching component oracle.rdbms.rat, 19.0.0.0.0...
+
+Patching component oracle.ovm, 19.0.0.0.0...
+
+Patching component oracle.odbc, 19.0.0.0.0...
+
+Patching component oracle.xdk.server, 19.0.0.0.0...
+
+Patching component oracle.oraolap.dbscripts, 19.0.0.0.0...
+
+Patching component oracle.xdk.xquery, 19.0.0.0.0...
+
+Patching component oracle.network.listener, 19.0.0.0.0...
+
+Patching component oracle.dbtoolslistener, 19.0.0.0.0...
+
+Patching component oracle.ldap.rsf.ic, 19.0.0.0.0...
+
+Patching component oracle.xdk.parser.java, 19.0.0.0.0...
+
+Patching component oracle.sdo.locator, 19.0.0.0.0...
+
+Patching component oracle.ctx.rsf, 19.0.0.0.0...
+
+Patching component oracle.ldap.ssl, 19.0.0.0.0...
+
+Patching component oracle.oraolap, 19.0.0.0.0...
+
+Patching component oracle.mgw.common, 19.0.0.0.0...
+
+Patching component oracle.install.deinstalltool, 19.0.0.0.0...
+
+Patching component oracle.rdbms.dv, 19.0.0.0.0...
+
+Patching component oracle.xdk, 19.0.0.0.0...
+
+Patching component oracle.nlsrtl.rsf.lbuilder, 19.0.0.0.0...
+
+Patching component oracle.ctx.atg, 19.0.0.0.0...
+
+Patching component oracle.network.aso, 19.0.0.0.0...
+
+Patching component oracle.rdbms.lbac, 19.0.0.0.0...
+
+Patching component oracle.precomp.lang, 19.0.0.0.0...
+
+Patching component oracle.precomp.common, 19.0.0.0.0...
+
+Patching component oracle.oracler.server, 19.0.0.0.0...
+
+Patching component oracle.perlint, 5.28.1.0.0...
+
+Patching component oracle.jdk, 1.8.0.201.0...
+Patch 39472050 successfully applied.
+Sub-set patch [29517242] has become inactive due to the application of a super-set patch [39472050].
+Please refer to Doc ID 2161861.1 for any possible further required actions.
+Log file location: /u01/app/19.3.0/db/cfgtoollogs/opatch/opatch2026-08-15_06-07-37AM_1.log
+
+OPatch succeeded.
+
+(d). Verify the Installed patches and inventory 
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/db/OPatch/opatch lspatches
+39472050;Database Release Update : 19.32.0.0.260721 (39472050)
+29585399;OCW RELEASE UPDATE 19.3.0.0.0 (29585399)
+
+OPatch succeeded.
+[oracle@caoradb01 ~]$
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/db/OPatch/opatch lsinventory | grep -i applied
+Patch  39472050     : applied on Sat Aug 15 06:11:33 UTC 2026
+Patch  29585399     : applied on Thu Apr 18 07:21:33 UTC 2019
+
+20. Creating few other ASM Disks, Disk Groups
+(a). Check if ASM is running to continue with database installation.
+ps -ef | grep pmon
+
+(b). Create partitions for different ASM Disks as 'root' user
+
+[root@caoradb01 rpm]# parted /dev/nvme0n3 --script -a optimal mklabel gpt mkpart primary 0% 100%
+[root@caoradb01 rpm]#
+[root@caoradb01 rpm]# parted /dev/nvme0n4 --script -a optimal mklabel gpt mkpart primary 0% 100%
+[root@caoradb01 rpm]#
+[root@caoradb01 rpm]# parted /dev/nvme0n5 --script -a optimal mklabel gpt mkpart primary 0% 100%
+
+(c). Create ASM Disks
+[root@caoradb01 rpm]# oracleasm createdisk DATA /dev/nvme0n3p1
+Writing disk header: done
+Instantiating disk: done
+[root@caoradb01 rpm]# oracleasm createdisk REDO /dev/nvme0n4p1
+Writing disk header: done
+Instantiating disk: done
+[root@caoradb01 rpm]# oracleasm createdisk FRA /dev/nvme0n5p1
+Writing disk header: done
+Instantiating disk: done
+
+(d). Scanning ASM Disks
+[root@caoradb01 rpm]# oracleasm scandisks
+Reloading disk partitions: done
+Cleaning any stale ASM disks...
+Scanning system for ASM disks...
+
+(e). List ASM Disks
+[root@caoradb01 rpm]# oracleasm listdisks
+DATA
+FRA
+REDO
+VOT
+
+(f). Create DATA, REDO, FRA ASM Diskgroup as 'oracle' user and setting ORACLE_HOME as GRID_HOME and ORACLE_SID=+ASM
+
+[oracle@caoradb01 ~]$ asmca -silent -createDiskGroup -diskString '/dev/oracleasm/disks/*' -diskGroupName DATA -diskList '/dev/oracleasm/disks/DATA' -redundancy EXTERNAL
+
+[DBT-30001] Disk groups created successfully. Check /u01/app/oracle/cfgtoollogs/asmca/asmca-260815AM061645.log for details.
+
+[oracle@caoradb01 ~]$ asmca -silent -createDiskGroup -diskString '/dev/oracleasm/disks/*' -diskGroupName REDO -diskList '/dev/oracleasm/disks/REDO' -redundancy EXTERNAL
+
+[DBT-30001] Disk groups created successfully. Check /u01/app/oracle/cfgtoollogs/asmca/asmca-260815AM061707.log for details.
+
+[oracle@caoradb01 ~]$ asmca -silent -createDiskGroup -diskString '/dev/oracleasm/disks/*' -diskGroupName FRA -diskList '/dev/oracleasm/disks/FRA' -redundancy EXTERNAL
+
+[DBT-30001] Disk groups created successfully. Check /u01/app/oracle/cfgtoollogs/asmca/asmca-260815AM061720.log for details.
+
+(g). Check the database.compatible parameter to 19.0.0.0 from 10.1.0.0.0, otherwise the database installation would fail
+#as oracle user
+ASMCMD [+] > lsattr -G VOT -l
+Name                           Value
+access_control.enabled         FALSE
+access_control.umask           066
+appliance._partnering_type     GENERIC
+ate_conversion_done            true
+au_size                        4194304
+cell.smart_scan_capable        FALSE
+cell.sparse_dg                 allnonsparse
+compatible.advm                19.0.0.0.0
+compatible.asm                 19.0.0.0.0
+compatible.rdbms               10.1.0.0.0
+
+(h). Changing the database.compatible parameter
+ASMCMD [+] > setattr -G VOT compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G DATA compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G REDO compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G FRA compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > exit
+
+(i). After modification validate the changed value
+SQL> conn /as sysasm
+Connected.
+SQL>  column COMPATIBILITY format a30
+column DATABASE_COMPATIBILITY format a30
+set line 300
+select name, state, ALLOCATION_UNIT_SIZE, COMPATIBILITY, DATABASE_COMPATIBILITY from  v$asm_diskgroup;
+SQL> SQL> SQL>
+NAME                           STATE       ALLOCATION_UNIT_SIZE COMPATIBILITY                  DATABASE_COMPATIBILITY
+------------------------------ ----------- -------------------- ------------------------------ ------------------------------
+VOT                            MOUNTED                  4194304 19.0.0.0.0                     19.0.0.0.0
+DATA                           MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+REDO                           MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+FRA                            MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+
+21. Create Database
+#Set the ORACLE_HOME and ORACLE_SID parameters by running the .bash_profile
+[oracle@caoradb01 ~]$ source .bash_profile
+[oracle@caoradb01 ~]$ echo $ORACLE_SID
+TESTCDB
+[oracle@caoradb01 ~]$ echo $ORACLE_HOME
+/u01/app/19.3.0/db
+[oracle@caoradb01 ~]$
+[oracle@caoradb01 ~]$ dbca -silent -createDatabase \
+>   -gdbName TESTCDB \
+>   -sid TESTCDB \
+>   -responseFile NO_VALUE \
+>   -databaseConfigType SI \
+>   -dbOptions JSERVER:true,ORACLE_TEXT:false,IMEDIA:false,CWMLITE:false,SPATIAL:false,OMS:false,APEX:false,DV:false \
+>   -createAsContainerDatabase true \
+>   -numberOfPDBs 1 \
+>   -pdbName PRPDB \
+>   -pdbAdminPassword <PDB_ADMIN_PASSWORD> \
+>   -databaseType MULTIPURPOSE \
+>   -templateName New_Database.dbt \
+>   -sysPassword <SYS_PASSWORD> \
+>   -systemPassword <SYSTEM_PASSWORD> \
+>   -storageType ASM \
+>   -diskGroupName +DATA \
+>   -recoveryGroupName +REDO \
+>   -redoLogFileSize 50 \
+>   -useOMF true \
+>   -totalMemory 4096 \
+>   -characterSet AL32UTF8 \
+>   -sampleSchema false \
+>   -enableArchive true \
+>   -initParams sga_target=1536MB,pga_aggregate_target=512MB,nls_language=ENGLISH,nls_territory='AMERICA',db_create_online_log_dest_1='+DATA',processes=300,open_cursors=300,db_recovery_file_dest_size=1GB \
+>   -automaticMemoryManagement false
+
+[WARNING] [DBT-06801] Specified Fast Recovery Area size (1,024 MB) is less than the recommended value.
+   CAUSE: Fast Recovery Area size should at least be three times the database size (5,307 MB).
+   ACTION: Specify Fast Recovery Area Size to be at least three times the database size.
+[WARNING] [DBT-06801] Specified Fast Recovery Area size (1,024 MB) is less than the recommended value.
+   CAUSE: Fast Recovery Area size should at least be three times the database size (3,842 MB).
+   ACTION: Specify Fast Recovery Area Size to be at least three times the database size.
+Prepare for db operation
+5% complete
+Registering database with Oracle Restart
+7% complete
+Creating and starting Oracle instance
+9% complete
+12% complete
+Creating database files
+13% complete
+17% complete
+Creating data dictionary views
+19% complete
+22% complete
+24% complete
+26% complete
+27% complete
+29% complete
+32% complete
+Oracle JVM
+39% complete
+46% complete
+54% complete
+56% complete
+Creating cluster database views
+57% complete
+66% complete
+Completing Database Creation
+69% complete
+70% complete
+71% complete
+Creating Pluggable Databases
+74% complete
+85% complete
+Executing Post Configuration Actions
+100% complete
+Database creation complete. For details check the logfiles at:
+ /u01/app/oracle/cfgtoollogs/dbca/TESTCDB.
+Database Information:
+Global Database Name:TESTCDB
+System Identifier(SID):TESTCDB
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/TESTCDB/TESTCDB.log" for further details.
+
+22. Verification after patching, install and database creation. 
+
+[oracle@caoradb01 ~]$ /u01/app/19.3.0/grid/bin/crsctl stat res -init -t
+--------------------------------------------------------------------------------
+Name           Target  State        Server                   State details
+--------------------------------------------------------------------------------
+Local Resources
+--------------------------------------------------------------------------------
+ora.DATA.dg
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.FRA.dg
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.LISTENER.lsnr
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.REDO.dg
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.VOT.dg
+               ONLINE  ONLINE       caoradb01                STABLE
+ora.asm
+               ONLINE  ONLINE       caoradb01                Started,STABLE
+ora.ons
+               OFFLINE OFFLINE      caoradb01                STABLE
+--------------------------------------------------------------------------------
+Cluster Resources
+--------------------------------------------------------------------------------
+ora.cssd
+      1        ONLINE  ONLINE       caoradb01                STABLE
+ora.diskmon
+      1        OFFLINE OFFLINE                               STABLE
+ora.evmd
+      1        ONLINE  ONLINE       caoradb01                STABLE
+ora.testcdb.db
+      1        ONLINE  ONLINE       caoradb01                Open,HOME=/u01/app/1
+                                                             9.3.0/db,STABLE
+--------------------------------------------------------------------------------
+[oracle@caoradb01 ~]$
+
+
+#Check the DBA Registry
+
+col ACTION_TIME format a30
+col ACTION format a15
+col status format a15
+col description format a55
+col target_build_description format a30
+set lines 200 pages 100
+select target_build_description,PATCH_UID,PATCH_ID,ACTION,STATUS,ACTION_TIME,DESCRIPTION from dba_registry_sqlpatch;
+
+TARGET_BUILD_DESCRIPTION        PATCH_UID   PATCH_ID ACTION          STATUS          ACTION_TIME                    DESCRIPTION
+------------------------------ ---------- ---------- --------------- --------------- ------------------------------ -------------------------------------------------------
+Release_Update                   28919163   39472050 APPLY           SUCCESS         15-AUG-26 06.51.04.185744 AM   Database Release Update : 19.32.0.0.260721 (39472050)
+
+# Check the DBA_REGISTRY_SQLPATCH Table
+col ACTION_TIME format a30
+col ACTION format a15
+col version format a15
+col status format a15
+col DESCRIPTION format a55
+set lines 200
+select install_id,PATCH_UID,PATCH_ID,ACTION,STATUS,ACTION_TIME,DESCRIPTION, source_version, target_version from dba_registry_sqlpatch;
+
+INSTALL_ID  PATCH_UID   PATCH_ID ACTION          STATUS          ACTION_TIME                    DESCRIPTION                                           SOURCE_VERSION  TARGET_VERSION
+---------- ---------- ---------- --------------- --------------- ------------------------------ ----------------------------------------------------  --------------- ---------------
+         1   28919163   39472050 APPLY           SUCCESS         15-AUG-26 06.51.04.185744 AM   Database Release Update : 19.32.0.0.260721 (39472050) 19.1.0.0.0      19.32.0.0.0
+
+
+# Check the REGISTRY$HISTORY Table
+set pagesize 10000
+set linesize 300
+col version format a30
+col comments format a70
+col ACTION_TIME format a30
+select action_time, action, version, comments
+from sys.registry$history
+order by 1 desc;
+
+ACTION_TIME                    ACTION                         VERSION                        COMMENTS
+------------------------------ ------------------------------ ------------------------------ ----------------------------------------------------------------------
+                               BOOTSTRAP                      19                             RDBMS_19.32.0.0.0DBRU_LINUX.X64_260705
+15-AUG-26 06.51.04.219003 AM   RU_APPLY                       19.0.0.0.0                     Patch applied on 19.32.0.0.0: Release_Update - 260705220710
+
+
+#Check the DBA_REGISTRY Table for different components
+set line 200
+column comp_name format a40
+col version format a20
+column version_full format a20
+column status format a20
+select comp_name, version, version_full, status, modified from dba_registry;
+
+COMP_NAME                                VERSION              VERSION_FULL         STATUS               MODIFIED
+---------------------------------------- -------------------- -------------------- -------------------- -----------------------------
+Oracle Database Catalog Views            19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:20
+Oracle Database Packages and Types       19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:20
+Oracle Real Application Clusters         19.0.0.0.0           19.32.0.0.0          OPTION OFF           15-AUG-2026 06:46:41
+JServer JAVA Virtual Machine             19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:23
+Oracle XDK                               19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:23
+Oracle Database Java Packages            19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:23
+Oracle XML Database                      19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:21
+Oracle Workspace Manager                 19.0.0.0.0           19.32.0.0.0          VALID                15-AUG-2026 06:54:23
