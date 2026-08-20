@@ -42,7 +42,7 @@ execution output captured during the deployment:
 
 👉 Oracle19c_Azure_RHEL79_Installation_Command_Output.log
 
-**[Oracle19c_Azure_RHEL79_Installation_Command_Output.log](./Oracle19c_Azure_RHEL79_Installation_Command_Output.log)**
+👉 **[Oracle19c_Azure_RHEL79_Installation_Command_Output.log](./Oracle19c_Azure_RHEL79_Installation_Command_Output.log)**
 
 The `.log` format is intentional. It preserves the original
 command-line formatting, SQL*Plus output, OPatch output, CVU output,
