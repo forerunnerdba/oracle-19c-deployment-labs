@@ -40,8 +40,6 @@ troubleshooting and validation is documented in the LinkedIn article:
 The following log contains the detailed command sequence and actual
 execution output captured during the deployment:
 
-👉 Oracle19c_Azure_RHEL79_Installation_Command_Output.log
-
 👉 **[Oracle19c_Azure_RHEL79_Installation_Command_Output.log](./Oracle19c_Azure_RHEL79_Installation_Command_Output.log)**
 
 The `.log` format is intentional. It preserves the original
