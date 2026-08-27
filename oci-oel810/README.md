@@ -51,8 +51,7 @@ Installation Command & Execution Output
 
 The following log contains the detailed command sequence and actual execution output captured during the deployment:
 
-👉 Oracle19c_OEL810_Installation_Command_Output.log
-https://github.com/forerunnerdba/oracle-19c-deployment-labs/blob/main/Oracle19c_OracleCloud_OEL810_Installation_Command_Output.log
+👉 **[Oracle19c_OEL810_Installation_Command_Output.log](./Oracle19c_OracleCloud_OEL810_Installation_Command_Output.log)**
 
 The .log format is intentional. It preserves the original command-line formatting, SQL*Plus output, OPatch output, ASMCA output, DBCA output, warnings, errors and validation results.
 
