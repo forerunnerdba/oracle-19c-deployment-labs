@@ -1,8 +1,5 @@
-#During database creation, the process failed with the error [FATAL] ORA‑01501, which was ultimately traced to an incorrect COMPATIBILITY setting of 10.1.0.0.0. The failure consistently occurred at 9%, the point at which Oracle begins creating data files.
 
-#Diagnosing this issue took considerable time because the error message does not directly indicate the underlying cause, and there is no straightforward reference pointing to COMPATIBILITY as the culprit.
-
-#After resolving the problem, I felt it was important to document the findings so others encountering the same error can quickly identify and fix the issue without unnecessary troubleshooting.
+#During database creation, the process failed with the error [FATAL] ORA‑01501, which was ultimately traced to an incorrect COMPATIBILITY setting of 10.1.0.0.0. The failure consistently occurred at 9%, the point at which Oracle begins creating data files. Diagnosing this issue took considerable time because the error message does not directly indicate the underlying cause, and there is no straightforward reference pointing to COMPATIBILITY as the culprit. After resolving the problem, I felt it was important to document the findings so others encountering the same error can quickly identify and fix the issue without unnecessary troubleshooting.      
 
   dbca -silent -createDatabase \
     -gdbName TESTCDB \
