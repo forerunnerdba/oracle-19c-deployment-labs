@@ -1,0 +1,278 @@
+#During database creation, the process failed with the error [FATAL] ORA‑01501, which was ultimately traced to an incorrect COMPATIBILITY setting of 10.1.0.0.0. The failure consistently occurred at 9%, the point at which Oracle begins creating data files.
+
+#Diagnosing this issue took considerable time because the error message does not directly indicate the underlying cause, and there is no straightforward reference pointing to COMPATIBILITY as the culprit.
+
+#After resolving the problem, I felt it was important to document the findings so others encountering the same error can quickly identify and fix the issue without unnecessary troubleshooting.
+
+  dbca -silent -createDatabase \
+    -gdbName TESTCDB \
+    -sid TESTCDB \
+    -responseFile NO_VALUE \
+    -databaseConfigType SI \
+    -dbOptions JSERVER:true,ORACLE_TEXT:false,IMEDIA:false,CWMLITE:false,SPATIAL:false,OMS:false,APEX:false,DV:false \
+    -createAsContainerDatabase true \
+    -numberOfPDBs 1 \
+    -pdbName TESTPDB \
+    -pdbAdminPassword E4CQmk3ps65N8xBc \
+    -databaseType MULTIPURPOSE \
+    -templateName New_Database.dbt \
+    -sysPassword gyoFm8AYHsvZm48A \
+    -systemPassword gyoFm8AYHsvZm48A \
+    -storageType ASM \
+    -diskGroupName +DATA \
+    -recoveryGroupName +REDO \
+    -redoLogFileSize 50 \
+    -useOMF true \
+    -totalMemory 4096 \
+    -characterSet AL32UTF8 \
+    -sampleSchema false \
+    -enableArchive true \
+    -initParams sga_target=1536MB,pga_aggregate_target=512MB,nls_language=ENGLISH,nls_territory='AMERICA',db_create_online_log_dest_1='+DATA',processes=300,open_cursors=300 \
+    -automaticMemoryManagement false
+
+
+[oracle@caoradb02 39472050]$   dbca -silent -createDatabase \
+>     -gdbName TESTCDB \
+>     -sid TESTCDB \
+>     -responseFile NO_VALUE \
+>     -databaseConfigType SI \
+>     -dbOptions JSERVER:true,ORACLE_TEXT:false,IMEDIA:false,CWMLITE:false,SPATIAL:false,OMS:false,APEX:false,DV:false \
+>     -createAsContainerDatabase true \
+>     -numberOfPDBs 1 \
+>     -pdbName TESTPDB \
+>     -pdbAdminPassword E4CQmk3ps65N8xBc \
+>     -databaseType MULTIPURPOSE \
+>     -templateName New_Database.dbt \
+>     -sysPassword ************ \
+>     -systemPassword ************* \
+>     -storageType ASM \
+>     -diskGroupName +DATA \
+>     -recoveryGroupName +REDO \
+>     -redoLogFileSize 50 \
+>     -useOMF true \
+>     -totalMemory 4096 \
+>     -characterSet AL32UTF8 \
+>     -sampleSchema false \
+>     -enableArchive true \
+>     -initParams sga_target=1536MB,pga_aggregate_target=512MB,nls_language=ENGLISH,nls_territory='AMERICA',db_create_online_log_dest_1='+DATA',processes=300,open_cursors=300 \
+>     -automaticMemoryManagement false
+Prepare for db operation
+5% complete
+Registering database with Oracle Restart
+7% complete
+Creating and starting Oracle instance
+9% complete
+[FATAL] ORA-01501: CREATE DATABASE failed
+ORA-19502: write error on file "+DATA/TESTCDB/CONTROLFILE/current.256.1242280041", block number 1 (block size=16384)
+ORA-15081: failed to submit an I/O operation to a disk
+
+12% complete
+100% complete
+[FATAL] ORA-01501: CREATE DATABASE failed
+ORA-19502: write error on file "+DATA/TESTCDB/CONTROLFILE/current.256.1242280041", block number 1 (block size=16384)
+ORA-15081: failed to submit an I/O operation to a disk
+
+7% complete
+5% complete
+0% complete
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/TESTCDB/TESTCDB.log" for further details.
+[oracle@caoradb02 39472050]$ vi /u01/app/oracle/cfgtoollogs/dbca/TESTCDB/TESTCDB.log
+[oracle@caoradb02 39472050]$ cat /u01/app/oracle/cfgtoollogs/dbca/TESTCDB/TESTCDB.log
+[ 2026-08-26 05:47:05.450 GMT ] Prepare for db operation
+DBCA_PROGRESS : 5%
+[ 2026-08-26 05:47:09.664 GMT ] Registering database with Oracle Restart
+DBCA_PROGRESS : 7%
+[ 2026-08-26 05:47:10.263 GMT ] Creating and starting Oracle instance
+DBCA_PROGRESS : 9%
+[ 2026-08-26 05:47:25.034 GMT ] [FATAL] ORA-01501: CREATE DATABASE failed
+ORA-19502: write error on file "+DATA/TESTCDB/CONTROLFILE/current.256.1242280041", block number 1 (block size=16384)
+ORA-15081: failed to submit an I/O operation to a disk
+
+DBCA_PROGRESS : 12%
+DBCA_PROGRESS : 100%
+[ 2026-08-26 05:47:25.039 GMT ] [FATAL] ORA-01501: CREATE DATABASE failed
+ORA-19502: write error on file "+DATA/TESTCDB/CONTROLFILE/current.256.1242280041", block number 1 (block size=16384)
+ORA-15081: failed to submit an I/O operation to a disk
+
+DBCA_PROGRESS : 7%
+DBCA_PROGRESS : 5%
+DBCA_PROGRESS : 0%
+
+
+column COMPATIBILITY format a30
+column DATABASE_COMPATIBILITY format a30
+set line 300
+select name, state, ALLOCATION_UNIT_SIZE, COMPATIBILITY, DATABASE_COMPATIBILITY from  v$asm_diskgroup;
+
+column COMPATIBILITY format a30
+column DATABASE_COMPATIBILITY format a30
+set line 300
+select name, state, ALLOCATION_UNIT_SIZE, COMPATIBILITY, DATABASE_COMPATIBILITY from  v$asm_diskgroup;SQL> SQL> SQL> SQL>
+
+NAME                           STATE       ALLOCATION_UNIT_SIZE COMPATIBILITY                  DATABASE_COMPATIBILITY
+------------------------------ ----------- -------------------- ------------------------------ ------------------------------
+VOTK                           MOUNTED                  4194304 19.0.0.0.0                     10.1.0.0.0
+DATA                           MOUNTED                  1048576 19.0.0.0.0                     10.1.0.0.0
+REDO                           MOUNTED                  1048576 19.0.0.0.0                     10.1.0.0.0
+FRA                            MOUNTED                  1048576 19.0.0.0.0                     10.1.0.0.0
+
+
+[oracle@caoradb02 ~]$ asmcmd -p
+ASMCMD [+] > lsattr -G VOTK -l
+Name                           Value
+access_control.enabled         FALSE
+access_control.umask           066
+appliance._partnering_type     GENERIC
+ate_conversion_done            true
+au_size                        4194304
+cell.smart_scan_capable        FALSE
+cell.sparse_dg                 allnonsparse
+compatible.advm                19.0.0.0.0
+compatible.asm                 19.0.0.0.0
+compatible.rdbms               10.1.0.0.0
+content.check                  FALSE
+content.type                   data
+content_hardcheck.enabled      FALSE
+disk_repair_time               12.0h
+failgroup_repair_time          24.0h
+idp.boundary                   auto
+idp.type                       dynamic
+logical_sector_size            512
+lostwrite_verify_delay         1000
+maxblkdump_content.check       3
+maxdump_content.check          32
+maxerr_content.check           1048576
+phys_meta_replicated           true
+preferred_read.enabled         FALSE
+scrub_async_limit              1
+scrub_content_check_in_repair  FALSE
+scrub_metadata.enabled         TRUE
+sector_size                    512
+thin_provisioned               FALSE
+vam_migration_done             false
+ASMCMD [+] > setattr -G VOT compatible.rdbms 19.0.0.0.0
+ORA-15032: not all alterations performed
+ORA-15001: diskgroup "VOT" does not exist or is not mounted (DBD ERROR: OCIStmtExecute)
+ASMCMD [+] > setattr -G VOTK compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G DATA compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G REDOcompatible.rdbms 19.0.0.0.0
+usage: setattr -G <diskgroup> <attribute_name> <attribute_value>
+help:  help setattr
+ASMCMD [+] > setattr -G REDO compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > setattr -G FRA compatible.rdbms 19.0.0.0.0
+ASMCMD [+] > lsattr -G VOTK -l
+Name                           Value
+access_control.enabled         FALSE
+access_control.umask           066
+appliance._partnering_type     GENERIC
+ate_conversion_done            true
+au_size                        4194304
+cell.smart_scan_capable        FALSE
+cell.sparse_dg                 allnonsparse
+compatible.advm                19.0.0.0.0
+compatible.asm                 19.0.0.0.0
+compatible.rdbms               19.0.0.0.0
+content.check                  FALSE
+content.type                   data
+content_hardcheck.enabled      FALSE
+disk_repair_time               12.0h
+failgroup_repair_time          24.0h
+idp.boundary                   auto
+idp.type                       dynamic
+logical_sector_size            512
+lostwrite_verify_delay         1000
+maxblkdump_content.check       3
+maxdump_content.check          32
+maxerr_content.check           1048576
+phys_meta_replicated           true
+preferred_read.enabled         FALSE
+scrub_async_limit              1
+scrub_content_check_in_repair  FALSE
+scrub_metadata.enabled         TRUE
+sector_size                    512
+thin_provisioned               FALSE
+vam_migration_done             false
+
+column COMPATIBILITY format a30
+column DATABASE_COMPATIBILITY format a30
+set line 300
+select name, state, ALLOCATION_UNIT_SIZE, COMPATIBILITY, DATABASE_COMPATIBILITY from  v$asm_diskgroup;SQL> SQL> SQL> SQL>
+
+NAME                           STATE       ALLOCATION_UNIT_SIZE COMPATIBILITY                  DATABASE_COMPATIBILITY
+------------------------------ ----------- -------------------- ------------------------------ ------------------------------
+VOTK                           MOUNTED                  4194304 19.0.0.0.0                     19.0.0.0.0
+DATA                           MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+REDO                           MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+FRA                            MOUNTED                  1048576 19.0.0.0.0                     19.0.0.0.0
+
+#After setting the database compatibility parameter to 19.0.0.0 database creation is successful.
+
+[oracle@caoradb02 ~]$   dbca -silent -createDatabase \
+>     -gdbName TESTCDB \
+>     -sid TESTCDB \
+>     -responseFile NO_VALUE \
+>     -databaseConfigType SI \
+>     -dbOptions JSERVER:true,ORACLE_TEXT:false,IMEDIA:false,CWMLITE:false,SPATIAL:false,OMS:false,APEX:false,DV:false \
+>     -createAsContainerDatabase true \
+>     -numberOfPDBs 1 \
+>     -pdbName TESTPDB \
+>     -pdbAdminPassword E4CQmk3ps65N8xBc \
+>     -databaseType MULTIPURPOSE \
+>     -templateName New_Database.dbt \
+>     -sysPassword gyoFm8AYHsvZm48A \
+>     -systemPassword gyoFm8AYHsvZm48A \
+>     -storageType ASM \
+>     -diskGroupName +DATA \
+>     -recoveryGroupName +REDO \
+>     -redoLogFileSize 50 \
+>     -useOMF true \
+>     -totalMemory 4096 \
+>     -characterSet AL32UTF8 \
+>     -sampleSchema false \
+>     -enableArchive true \
+>     -initParams sga_target=1536MB,pga_aggregate_target=512MB,nls_language=ENGLISH,nls_territory='AMERICA',db_create_online_log_dest_1='+DATA',processes=300,open_cursors=300 \
+>     -automaticMemoryManagement false
+Prepare for db operation
+5% complete
+Registering database with Oracle Restart
+7% complete
+Creating and starting Oracle instance
+9% complete
+12% complete
+Creating database files
+13% complete
+17% complete
+Creating data dictionary views
+19% complete
+22% complete
+
+24% complete
+26% complete
+27% complete
+29% complete
+32% complete
+Oracle JVM
+39% complete
+46% complete
+54% complete
+56% complete
+Creating cluster database views
+57% complete
+66% complete
+Completing Database Creation
+69% complete
+70% complete
+71% complete
+Creating Pluggable Databases
+74% complete
+85% complete
+Executing Post Configuration Actions
+100% complete
+Database creation complete. For details check the logfiles at:
+ /u01/app/oracle/cfgtoollogs/dbca/TESTCDB.
+Database Information:
+Global Database Name:TESTCDB
+System Identifier(SID):TESTCDB
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/TESTCDB/TESTCDB0.log" for further details.
+[oracle@caoradb02 ~]$
+[oracle@caoradb02 ~]$
