@@ -27,12 +27,17 @@ http://updates.oracle.com/ARULink/PatchDetails/process_form?patch_num=6880880
 (a) Create the users that will own the Oracle software using the commands:
 
 [root@caoradboel9 ~]# mkdir  /u01
+# OEL 9 uses a default UID range beginning at 1000. Using UID 501 generates a warning because it is outside UID_MIN/UID_MAX.
 [root@caoradboel9 ~]# /usr/sbin/useradd -u 501 -g oinstall -G dba oracle
+useradd warning: oracle's uid 501 outside of the UID_MIN 1000 and UID_MAX 60000 range.
+
+# Use a UID within the OEL 9 default range.
+[root@caoradboel9 ~]# /usr/sbin/useradd -u 1001 -g oinstall -G dba oracle
 [root@caoradboel9 ~]# chown -R oracle:oinstall /u01
 [root@caoradboel9 ~]# usermod  -G asmdba,asmoper,asmadmin,dba,oinstall oracle
 [root@caoradboel9 ~]# usermod -aG wheel oracle # This one we need when running cluster verification script with sudo
 [root@caoradboel9 ~]# id oracle
-uid=501(oracle) gid=501(oinstall) groups=501(oinstall),10(wheel),502(dba),503(asmdba),504(asmoper),506(asmadmin)
+uid=1001(oracle) gid=501(oinstall) groups=501(oinstall),10(wheel),502(dba),503(asmdba),504(asmoper),506(asmadmin)
 [root@caoradboel9 ~]#
 [root@caoradboel9 ~]# passwd oracle
 Changing password for user oracle.
