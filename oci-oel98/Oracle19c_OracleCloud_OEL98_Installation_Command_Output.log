@@ -2574,8 +2574,8 @@ ora.evmd
 #Now create ASM Instance. ASM instance will be created, Diskgroup will be created and ASM will be STARTED.
 [oracle@caoradboel9 grid]$ asmca -silent \
   -configureASM \
-  -sysAsmPassword "CCvWwjh6q7pCV4K4" \
-  -asmMonitorPassword "CCvWwjh6q7pCV4K4" \
+  -sysAsmPassword "<SYS_ASM_PASSWORD>" \
+  -asmMonitorPassword "<ASM_MON_PASSWORD>" \
   -diskString 'ORCL:*,/dev/disk/by-label/*' \
   -diskGroupName VOTK \
   -diskList 'ORCL:VOTK' \
