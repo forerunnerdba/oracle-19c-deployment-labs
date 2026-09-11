@@ -27,12 +27,19 @@ The log covers:
 7. CDB/PDB configuration
 8. Database startup and validation
 
+
+👉 LinkedIn Article
+
+The complete explanation of the deployment, configuration, troubleshooting and validation is documented in the LinkedIn article:
+
+End-to-End Oracle Database 19c Deployment on Oracle Linux 8.10 - Oracle Restart, ASM & RU 19.32.0
+
 ### Complete Command & Output Log
 
-The detailed commands and their actual execution output are available in:
+The following log contains the detailed command sequence and actual execution output captured during the deployment:
 
-**`Oracle19cInstallation_OEL8.10_No_Grid_Silent.log`**
-https://github.com/forerunnerdba/oracle-19c-deployment-labs/blob/main/oci-oel810-single-instance/Oracle19cInstallation_OEL810_No_Grid_Silent.log
+👉 **[Oracle19cInstallation_OEL8.10_No_Grid_Silent.log](./Oracle19cInstallation_OEL810_No_Grid_Silent.log)**
+
 
 > This file is provided as a reference containing the commands and output from the installation. Review and modify environment-specific values before using them on another server.
 
