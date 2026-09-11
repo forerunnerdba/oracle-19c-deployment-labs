@@ -39,7 +39,7 @@ End-to-End Oracle Database 19c Deployment on Oracle Linux 8.10 - Oracle Restart,
 
 The following log contains the detailed command sequence and actual execution output captured during the deployment:
 
-👉 **[Oracle19cInstallation_OEL8.10_No_Grid_Silent.log](./Oracle19cInstallation_OEL810_No_Grid_Silent.log)**
+👉 **[Oracle19cInstall_OEL8.10_No_Grid_Silent.log](./Oracle19cInstall_OEL810_No_Grid_Silent.log)**
 
 
 > This file is provided as a reference containing the commands and output from the installation. Review and modify environment-specific values before using them on another server.
