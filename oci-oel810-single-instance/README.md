@@ -2,6 +2,8 @@
 
 This repository contains the **complete commands and execution output** for installing Oracle Database 19c on **Oracle Linux 8.10** without Grid Infrastructure and ASM.
 
+📌 Overview
+
 ### Environment
 
 * **OS:** Oracle Linux 8.10
