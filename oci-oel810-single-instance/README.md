@@ -32,6 +32,7 @@ The log covers:
 The detailed commands and their actual execution output are available in:
 
 **`Oracle19cInstallation_OEL8.10_No_Grid_Silent.log`**
+https://github.com/forerunnerdba/oracle-19c-deployment-labs/blob/main/oci-oel810-single-instance/Oracle19cInstallation_OEL810_No_Grid_Silent.log
 
 > This file is provided as a reference containing the commands and output from the installation. Review and modify environment-specific values before using them on another server.
 
