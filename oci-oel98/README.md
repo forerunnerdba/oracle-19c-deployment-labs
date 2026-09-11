@@ -121,4 +121,8 @@ Areas of interest:
 * Ansible Automation
 * Linux
 
-⭐ If you find this practical deployment useful, feel free to share feedback, suggestions or corrections. Please consider giving the repository a Star.
+⭐ Feedback
+
+If you find this documentation useful, feel free to share your feedback, suggestions or corrections. Please consider giving the repository a Star.
+
+The objective is to continuously improve the documentation and capture practical Oracle DBA deployment experiences.
