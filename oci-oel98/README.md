@@ -121,4 +121,4 @@ Areas of interest:
 * Ansible Automation
 * Linux
 
-⭐ If you find this practical deployment useful, feel free to share feedback, suggestions or corrections.
+⭐ If you find this practical deployment useful, feel free to share feedback, suggestions or corrections. Please consider giving the repository a Star.
