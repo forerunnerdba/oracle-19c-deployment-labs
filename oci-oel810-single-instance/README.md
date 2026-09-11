@@ -27,7 +27,6 @@ The log covers:
 7. CDB/PDB configuration
 8. Database startup and validation
 
-
 👉 LinkedIn Article
 
 The complete explanation of the deployment, configuration, troubleshooting and validation is documented in the LinkedIn article:
@@ -45,6 +44,65 @@ The following log contains the detailed command sequence and actual execution ou
 
 ---
 
-**Oracle DBA | Installation | Configuration | Migration | Cloud**
+## 🏗️ Environment
 
-**Forerunner DBA**
+| Component           | Version / Configuration     |
+| ------------------- | --------------------------- |
+| Operating System    | Oracle Linux 8.10           |
+| Cloud Platform      | Oracle Cloud Infrastructure |
+| Database            | Oracle Database 19c         |
+| Database RU         | 19.32.0                     |
+| Storage             | File System                 |
+| Installation        | Single Instnace             |
+| Configuration       | Standalone Server           |
+| CDB                 | CAOBS                       |
+| PDB                 | CAPDB                       |
+
+⚠️ Disclaimer
+
+This repository documents a tested Oracle Database 19c deployment performed in a specific Oracle Linux 8.10 environment.
+
+The commands, paths, package versions, storage configuration and database parameters may need to be modified for other environments.
+
+Before using these procedures in production, review:
+
+    Oracle certification requirements
+    Oracle documentation
+    Oracle Linux requirements
+    Storage requirements
+    Security requirements
+    Backup and recovery requirements
+    High availability requirements
+    Organizational standards
+
+🔐 Security
+
+Sensitive information such as passwords, private keys, tokens, credentials and environment-specific secrets has been removed or replaced with placeholders before publication.
+
+Do not commit production credentials, private keys or other sensitive information to GitHub.
+
+👨‍💻 Author
+
+Chakravarthy P
+
+Oracle Database Administrator / SME
+
+Areas of interest:
+
+    Oracle Database
+    Oracle RAC
+    Oracle ASM
+    Oracle Data Guard
+    Oracle Restart
+    Oracle Cloud
+    Microsoft Azure
+    Database Migration
+    Oracle Patching
+    Ansible Automation
+    Linux
+
+⭐ Feedback
+
+If you find this documentation useful, feel free to share your feedback, suggestions or corrections. Please consider giving the repository a Star.
+
+The objective is to continuously improve the documentation and capture practical Oracle DBA deployment experiences.
